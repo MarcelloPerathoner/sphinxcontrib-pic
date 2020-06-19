@@ -161,6 +161,10 @@ class PicNode (nodes.General, nodes.Inline, nodes.Element):
         stdout = re.sub (r'<\?xml .*?\?>',  '', stdout, flags = re.S)
         stdout = re.sub (r'<!DOCTYPE .*?>', '', stdout, flags = re.S)
 
+        # stupid plantuml sets dimensions in a style on the element
+        # so you cannot override them in CSS
+        stdout = re.sub (r'(<svg .*?)style=".*?"', r'\1', stdout, flags = re.S)
+
         return stdout
 
 
@@ -190,6 +194,9 @@ class PicNode (nodes.General, nodes.Inline, nodes.Element):
         if 'format' in self['options']:
             classes.append ('pic-format-%s' % self['options']['format'])
 
+        if 'html-classes' in self['options']:
+            classes += self['options']['html-classes'].split ()
+
         translator.body.append ('<div %s class="%s">\n' % (align, ' '.join (classes)))
         translator.body.append (self.render_xml ())
         translator.body.append ('</div>\n')
@@ -211,32 +218,21 @@ class PicDirective (SphinxDirective):
     # the PIC program
     has_content = True
 
-    option_spec = {
-        'prolog'  : directives.unchanged,  # prolog (overrides conf.py)
-        'epilog'  : directives.unchanged,  # epilog (overrides conf.py)
-        'align'   : lambda v: directives.choice (v, ('left', 'center', 'right')),
-        'format'  : lambda v: directives.choice (v, ('dot', 'html')),
-        'caption' : directives.unchanged,
-        'name'    : directives.unchanged,
+    name = NAME
+
+    base_option_spec = {
+        'align'        : lambda v: directives.choice (v, ('left', 'center', 'right')),
+        'format'       : lambda v: directives.choice (v, ('dot', 'html')),
+        'caption'      : directives.unchanged,
+        'name'         : directives.unchanged,
+        'html-classes' : directives.unchanged,
     }
 
-    def get_opt (self, name, required = False):
-
-        # opt = self.options.get (name) or getattr (self.env.config, "%s_%s" % (NAME, name))
-
-        options  = getattr (self.env.config, NAME + '_options')
-        language = self.arguments[0]
-        if language not in options:
-            raise PicError (__ ('Unknown language %s in directive.') % language)
-
-        options = options[language]
-
-        opt = self.options.get (name) or options.get (name)
-        if required and not opt:
-            raise PicError (
-                ':%s: option required in directive (or set %s_%s in conf.py).' % (name, NAME, name)
-            )
-        return opt
+    option_spec = {
+        'prolog'       : directives.unchanged,  # prolog (overrides conf.py)
+        'epilog'       : directives.unchanged,  # epilog (overrides conf.py)
+    }
+    option_spec.update (base_option_spec)
 
     def err (self, msg):
         document = self.state.document
@@ -256,10 +252,26 @@ class PicDirective (SphinxDirective):
         figure_node += caption_node
         return figure_node
 
+    def get_opt (self, name, required = False):
 
-    def run (self) -> List[PicNode]:
-        """ Turn the directive into a node. """
+        # opt = self.options.get (name) or getattr (self.env.config, "%s_%s" % (self.name, name))
 
+        options  = getattr (self.env.config, self.name + '_options')
+        language = self.arguments[0]
+        if language not in options:
+            raise PicError (__ ('Unknown language %s in directive.') % language)
+
+        options = options[language]
+
+        opt = self.options.get (name) or options.get (name)
+        if required and not opt:
+            raise PicError (
+                ':%s: option required in directive (or set %s_%s in conf.py).' % (name, self.name, name)
+            )
+        return opt
+
+    def get_code (self):
+        """ Get the PIC code. """
         if len (self.arguments) > 1:
             if self.content:
                 return self.err (__ ('The PIC directive cannot have both content and a filename argument.')),
@@ -275,15 +287,21 @@ class PicDirective (SphinxDirective):
             pic_code = '\n'.join (self.content)
             if not pic_code.strip ():
                 return self.err (__ ('Found PIC directive without content.'))
+        return self.get_opt ('prolog') + pic_code + self.get_opt ('epilog')
+
+
+    def run (self) -> List[PicNode]:
+        """ Turn the directive into a node. """
 
         node = PicNode ()
-        node['code']    = (self.get_opt ('prolog') + pic_code + self.get_opt ('epilog')).strip ()
+        node['code']    = self.get_code ().strip ()
         node['options'] = {
-            'program' : self.get_opt ('program'),
-            'shell'   : self.get_opt ('shell') or False,
-            'cwd'     : self.get_opt ('cwd'),
-            'alt'     : self.get_opt ('alt'),
-            'format'  : self.get_opt ('format') or 'dot'
+            'program'      : self.get_opt ('program'),
+            'shell'        : self.get_opt ('shell') or False,
+            'cwd'          : self.get_opt ('cwd'),
+            'alt'          : self.get_opt ('alt'),
+            'format'       : self.get_opt ('format') or 'dot',
+            'html-classes' : self.get_opt ('html-classes') or '',
         }
 
         node['align'] = self.get_opt ('align')
@@ -302,6 +320,7 @@ class PicDirective (SphinxDirective):
 
 def html_visit_pic (translator: HTMLTranslator, node: PicNode) -> None:
     node.html_visit (translator)
+
 
 def dummy_visit_pic (translator: HTMLTranslator, node: PicNode) -> None:
     if node['alt']:
