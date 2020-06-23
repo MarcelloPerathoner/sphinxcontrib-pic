@@ -4,8 +4,7 @@
     Draw pictures with 'little languages'.
 
     Originally I used this to draw diagrams with GNU pic.  Hence the name.  Now
-    it works with many 'little languages', eg.  graphviz dot, GNU pic, plantuml,
-    ...
+    it works with many 'little languages', eg.  graphviz dot, GNU pic, plantuml, ...
     It is not limited to pictures either, you can insert the output of any
     commandline program into your documentation.
 
